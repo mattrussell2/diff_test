@@ -63,7 +63,7 @@ When you run a test, your code will be ‘made’ according to the make command 
 
 
 ## Examples
-See examples in the tests/ folders in the repository
+See examples in the example/ folder in the repository
 
 
 Thanks! And happy coding!
