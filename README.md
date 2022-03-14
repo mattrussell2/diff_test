@@ -1,7 +1,7 @@
 # diff_test
 A sweet and simple way to test output of a program vs a reference implementation.
 
-### testing .toml file
+## testing .toml file
 In order to run tests, you need a `.toml` file in your working directory. `.toml` \[https://github.com/toml-lang/toml\](tom’s obvious, minimal language), is a simple configuration file which we will use to organize our tests.
 
 Our `.toml` testing file will have two main sections: `[config]`, and `[tests]`.
@@ -44,7 +44,7 @@ For the above test and configuration, the command-line code is equivalent:
 You may optionally swap `stdin_file` with `stdin_test`, where you provide a 
 string of text to be sent directly to stdin. 
 
-### Running Tests
+## Running Tests
 
 You can run your tests with the command  
 `diff_test -t my_toml_file.toml`  
@@ -62,8 +62,8 @@ When you run a test, your code will be ‘made’ according to the make command 
 6.  Results are reported!
 
 
-### Examples
-See examples in the sample/ and tests/ folders in the repository
+## Examples
+See examples in the tests/ folders in the repository
 
 
 Thanks! And happy coding!

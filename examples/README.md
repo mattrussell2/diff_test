@@ -12,3 +12,4 @@ each other folder contains a test file.
 * test 5 - non-reference program fails assertion
 * test 6 - demonstrate memory leak in implementation code
 * test 7 - demonstrate diff in cerr
+* test 8 - demonstrate use of stdin_text
