@@ -1,0 +1,11 @@
+# example diff test testing file
+# this example tests memory leak in implementation will be caught
+# matt russell
+
+[config]
+exec           = "run6"             
+ref_exec       = "ref6"
+build_target   = "demo6"                 
+
+# command executed:  ./run 
+[tests.test6]
