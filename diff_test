@@ -1,5 +1,6 @@
-#!/usr/bin/python3
+#!/usr/sup/bin/python3.9
 """
+#!/usr/sup/bin/python
     diff_test
 
     This script runs the diff testing framework for comp15 
@@ -80,6 +81,11 @@ EXEC         = config['exec']
 REF_EXEC     = config['ref_exec']
 BUILD_TARGET = config['build_target']
 
+if 'timeout_time' in config:
+    TIMEOUT = str(config['timeout_time'])
+else:
+    TIMEOUT = '30'
+
 # extract test names from the 'tests' section
 TEST_NAMES   = [x for x in toml_data['tests']]
 
@@ -87,7 +93,6 @@ TEST_NAMES   = [x for x in toml_data['tests']]
 #                       test optional args in toml file                        #
 ################################################################################
 # set defaults for optional args
-TIMEOUT     = '30'
 PRETTY_DIFF = True
 CLEANUP     = True
 
@@ -229,7 +234,7 @@ def report_results(tests):
                 pstr += tests[test].diff_test.stdout + '\n'
                 pstr += tests[test].diff_test.stderr + '\n'
 
-        if tests[test].diff_stderr:            
+        if tests[test].diff_stderr:                        
             if tests[test].pretty_diff_stderr_test:
                 pstr += test + ' - diff stderr test result\n'
                 pstr += tests[test].pretty_diff_stderr_test.stdout + '\n'
@@ -247,7 +252,9 @@ def report_results(tests):
             pstr += test + " has run undefined behavior in your code,\n" + \
                     "which caused your program to crash. This is likely\n" + \
                     "due to uninitialized variable access.\n"
-        
+        if tests[test].standard_test.returncode == 124:
+            pstr += test + " timed out\n"
+
         if not tests[test].diff_files_passed():
             for i in range(len(tests[test].file_out_diffs)):
                 if tests[test].file_out_diffs[i].returncode != 0:
@@ -264,17 +271,27 @@ def report_results(tests):
         if tests[test].valgrind_test.stderr:
             pstr += test + ' - valgrind stderr\n' + '-' * len(test + ' - valgrind stderr') + '\n'
             pstr += tests[test].valgrind_test.stderr + '\n'
-    
+
+        if tests[test].valgrind_test.returncode == 124:
+            pstr += test + " - valgrind - timed out\n"
+
     if not valgrind_failed_tests:
         pstr += "(none)\n\n" 
     
-    
+    timed_out_tests = [name for name, test in tests.items() if test.standard_test.returncode == 124]
+    valgrind_timed_out_tests = [name for name, test in tests.items() if test.valgrind_test.returncode == 124]
+
+    num_timed_out = str(len(timed_out_tests))
+    num_valgrind_timed_out = str(len(valgrind_timed_out_tests))
+
     pstr += "== test summary ==\n"
     pstr += "number of tests passed: " + num_passed + '\n'
     pstr += "number of tests failed: " + num_failed + '\n'
+    pstr += "number of tests timed out: " + num_timed_out + '\n'
     pstr += "number of valgrind tests passed: " + num_valgrind_passed + '\n'
     pstr += "number of valgrind tests failed: " + num_valgrind_failed + '\n'
-    
+    pstr += "number of valgrind tests timed out: " + num_valgrind_timed_out + '\n'
+
     pstr += "\n== test results ==\n"
     if passed_tests:
         pstr += "passing tests - " + repr(passed_tests) + '\n'
@@ -285,6 +302,11 @@ def report_results(tests):
         pstr += "failing tests - " + repr(failed_tests) + '\n'
     else: 
         pstr += "failing tests - (none)\n"
+
+    if timed_out_tests:
+        pstr += "timed out tests - " + repr(timed_out_tests) + '\n'
+    else:
+        pstr += "timed out tests - (none)\n"
     
     pstr += "\n== valgrind results ==\n"
     if valgrind_passed_tests:
@@ -296,17 +318,25 @@ def report_results(tests):
         pstr += "failing valgrind tests - " + repr(valgrind_failed_tests) + '\n'
     else:
         pstr += "failing valgrind tests - (none)\n"
+
+    if valgrind_timed_out_tests:
+        pstr += "timed out valgrind tests - " + repr(valgrind_timed_out_tests) + '\n'
+    else:
+        pstr += "timed out valgrind tests - (none)\n"
               
     print(pstr)
 
 class Test:
     def __init__(self, testname):
-        self.name         = testname
-        self.input_args   = []
-        self.stdin_file   = TMPFILE
-        self.run_valg_opt = True
-        self.diff_stderr  = True
-        self.output_files = []
+        self.name              = testname
+        self.input_args        = []
+        self.stdin_file        = TMPFILE
+        self.run_valg_opt      = True
+        self.diff_stderr       = True
+        self.output_files      = []
+        self.sort_output_files = False
+        self.sort_stdout       = False
+        self.sort_stderr       = False
 
         tomlobj = toml_data['tests'][testname]
 
@@ -343,6 +373,19 @@ class Test:
         if 'created_files' in tomlobj:
             self.output_files = tomlobj['created_files']
 
+        if 'sort_output_files' in tomlobj:
+            self.sort_output_files = tomlobj['sort_output_files'] == "True"
+
+        if 'sort_stdout' in tomlobj:
+            self.sort_stdout = tomlobj['sort_stdout'] == "True"
+
+        if 'sort_stderr' in tomlobj:
+            self.sort_stderr = tomlobj['sort_stderr'] == "True"
+
+        if 'expected_returncode' in tomlobj:
+            self.expected_returncode = int(tomlobj['expected_returncode'])
+        else:
+            self.expected_returncode = 0
 
     def run_code(self, EXECUTABLE, STDOUTPATH, STDERRPATH):
         exec_list = [os.path.join("./", EXECUTABLE)] + self.input_args
@@ -371,7 +414,13 @@ class Test:
         self.run_reference()
 
 
-    def run_diff(self, filea, fileb):
+    def run_diff(self, filea, fileb, sort=False):
+        if sort:
+            sort_a_result = RUN(["sort", filea])
+            sort_b_result = RUN(["sort", fileb])
+            Path(filea).write_text(sort_a_result.stdout)
+            Path(fileb).write_text(sort_b_result.stdout)
+
         diff_test = RUN(DIFFCMD + [filea, fileb])
         Path(TMP_DIFF_STDOUT).write_text(diff_test.stdout)
         if PRETTY_DIFF:
@@ -384,17 +433,18 @@ class Test:
     # runs diffs for - stdout, stderr, and any number of specified output files
     def run_diffs(self):
         (self.diff_stdout_test, self.pretty_diff_stdout_test) = \
-            self.run_diff(TMP_STUD_STDOUT, TMP_REFR_STDOUT)
+            self.run_diff(TMP_STUD_STDOUT, TMP_REFR_STDOUT, sort=self.sort_stdout)
 
         (self.diff_stderr_test, self.pretty_diff_stderr_test) = \
-            self.run_diff(TMP_STUD_STDERR, TMP_REFR_STDERR)
+            self.run_diff(TMP_STUD_STDERR, TMP_REFR_STDERR, sort=self.sort_stderr)
+
                     
         self.file_out_diffs = []
         self.file_out_pretty_diffs = []
         for student, reference in zip(self.student_outfiles, self.ref_outfiles):
             Path(TMP_STUD_STDOUT).write_text(student)
             Path(TMP_REFR_STDOUT).write_text(reference)
-            (diff, pretty_diff) = self.run_diff(TMP_STUD_STDOUT, TMP_REFR_STDOUT)
+            (diff, pretty_diff) = self.run_diff(TMP_STUD_STDOUT, TMP_REFR_STDOUT, sort=self.sort_output_files)
             self.file_out_diffs.append(diff)
             self.file_out_pretty_diffs.append(pretty_diff)
             
@@ -410,16 +460,16 @@ class Test:
         with open(self.stdin_file, "r") as stdin:
             self.valgrind_test = RUN(valgrind_command, stdin=stdin)
     
-    def standard_test_passed(self):        
-        return self.standard_test.returncode == 0 
+    def standard_test_passed(self):            
+        return self.standard_test.returncode == self.expected_returncode 
     
     def valgrind_test_passed(self):        
-        return self.valgrind_test.returncode == 0
+        return self.valgrind_test.returncode == self.expected_returncode
             
     def diff_stdout_test_passed(self):       
         return self.diff_stdout_test.returncode == 0
     
-    def diff_stderr_test_passed(self):        
+    def diff_stderr_test_passed(self):          
         return self.diff_stderr_test.returncode == 0
         
     def diff_files_passed(self):
@@ -429,7 +479,7 @@ class Test:
 
     def passed(self):
         if (self.run_valgrind and not self.valgrind_test_passed()) or \
-           (self.diff_stderr  and not self.diff_stderr_test_passed()): 
+           (self.diff_stderr  and not self.diff_stderr_test_passed()):            
            return False
         for f_test in self.file_out_diffs:
             if f_test.returncode != 0: return False
